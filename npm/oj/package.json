@@ -1,0 +1,27 @@
+{
+  "name": "@brrock/oj",
+  "version": "0.0.0",
+  "description": "Prebuilt Linux binaries of oj (lovablelabs/oj), e.g. for running oj on Vercel",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brrock/oj-builds.git"
+  },
+  "homepage": "https://github.com/lovablelabs/oj",
+  "keywords": ["oj", "vite", "bundler", "vercel"],
+  "bin": {
+    "oj": "bin/oj.js"
+  },
+  "main": "index.js",
+  "files": ["bin", "index.js", "README.md"],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "rolldown": "1.2.1"
+  },
+  "optionalDependencies": {
+    "@brrock/oj-linux-x64-gnu": "0.0.0",
+    "@brrock/oj-linux-arm64-gnu": "0.0.0"
+  }
+}

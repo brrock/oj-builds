@@ -1,0 +1,161 @@
+name: release
+
+# Builds oj (github.com/lovablelabs/oj) for Linux and publishes it to npm as
+# @brrock/oj + per-platform packages, with npm Trusted Publishing (OIDC): no
+# NPM_TOKEN secret, provenance attached automatically.
+#
+# Runs every 6 hours and publishes the latest oj release if npm doesn't have
+# it yet; or run it by hand with a specific version.
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "oj version to build, e.g. 0.2.16 (empty = latest oj release)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="${INPUT_VERSION#v}"
+          if [ -z "$version" ]; then
+            version=$(gh release view -R lovablelabs/oj --json tagName -q .tagName)
+            version="${version#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if npm view "@brrock/oj@$version" version >/dev/null 2>&1; then
+            echo "@brrock/oj@$version is already on npm, nothing to do"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "will build and publish @brrock/oj@$version"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: build ${{ matrix.pkg }}
+    needs: resolve
+    if: needs.resolve.outputs.publish == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: linux-x64-gnu
+            runner: ubuntu-latest
+          - pkg: linux-arm64-gnu
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    # Vercel's build image is Amazon Linux 2023 (glibc 2.34). Building in the
+    # same image guarantees the binary's glibc requirement is satisfied there.
+    container: amazonlinux:2023
+    timeout-minutes: 300
+    steps:
+      - name: install build deps
+        run: |
+          dnf install -y --allowerasing \
+            git tar gzip xz findutils which curl \
+            gcc gcc-c++ make cmake clang clang-devel llvm \
+            perl python3 autoconf automake libtool \
+            zlib-devel pkgconf-pkg-config binutils
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lovablelabs/oj
+          ref: v${{ needs.resolve.outputs.version }}
+          path: oj
+
+      - name: install rust (toolchain from oj's rust-toolchain.toml)
+        working-directory: oj
+        run: |
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustup" show active-toolchain || "$HOME/.cargo/bin/rustup" toolchain install
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: oj
+          key: ${{ matrix.pkg }}
+
+      - name: cargo build
+        working-directory: oj
+        run: cargo build --release --locked -p oj
+
+      - name: strip + smoke test
+        working-directory: oj
+        run: |
+          strip --strip-debug target/release/oj
+          ls -lh target/release/oj
+          ldd target/release/oj || true
+          objdump -T target/release/oj | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+          ./target/release/oj --version
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: oj-${{ matrix.pkg }}
+          path: oj/target/release/oj
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: npm publish
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: npm >= 11.5.1 (required for trusted publishing)
+        run: npm install -g npm@latest && npm --version
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: stage binaries + set versions
+        run: |
+          for pkg in linux-x64-gnu linux-arm64-gnu; do
+            mkdir -p "npm/$pkg/bin"
+            cp "artifacts/oj-$pkg/oj" "npm/$pkg/bin/oj"
+            chmod 755 "npm/$pkg/bin/oj"
+          done
+          cp README.md npm/oj/README.md
+          node scripts/set-version.mjs "${{ needs.resolve.outputs.version }}"
+
+      # Platform packages first so the main package never points at
+      # versions that don't exist yet.
+      - name: publish
+        run: |
+          for dir in npm/linux-x64-gnu npm/linux-arm64-gnu npm/oj; do
+            name=$(node -p "require('./$dir/package.json').name")
+            ver=$(node -p "require('./$dir/package.json').version")
+            if npm view "$name@$ver" version >/dev/null 2>&1; then
+              echo "$name@$ver already published, skipping"
+            else
+              npm publish "./$dir" --access public
+            fi
+          done

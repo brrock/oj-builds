@@ -1,0 +1,14 @@
+{
+  "name": "@brrock/oj-linux-x64-gnu",
+  "version": "0.0.0",
+  "description": "oj binary for Linux x64 (glibc). Install @brrock/oj instead of this package.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brrock/oj-builds.git"
+  },
+  "files": ["bin/oj"],
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "libc": ["glibc"]
+}

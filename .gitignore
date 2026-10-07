@@ -1,0 +1,6 @@
+node_modules/
+npm/*/bin/oj
+!npm/oj/bin/
+artifacts/
+*.tgz
+.DS_Store
