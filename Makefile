@@ -12,8 +12,8 @@
 
 REPO     ?= brrock/oj-builds
 WORKFLOW ?= release.yml
-PACKAGES  = @brrock/oj-linux-x64-gnu @brrock/oj-linux-arm64-gnu @brrock/oj
-DIRS      = npm/linux-x64-gnu npm/linux-arm64-gnu npm/oj
+PACKAGES  = @brrock/oj-linux-x64-gnu @brrock/oj-linux-arm64-gnu @brrock/oj-darwin-arm64 @brrock/oj
+DIRS      = npm/linux-x64-gnu npm/linux-arm64-gnu npm/darwin-arm64 npm/oj
 VERSION  ?=
 
 .PHONY: login whoami bootstrap trust trust-list setup lockdown release watch pack

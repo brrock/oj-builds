@@ -1,0 +1,13 @@
+{
+  "name": "@brrock/oj-darwin-arm64",
+  "version": "0.0.0",
+  "description": "oj binary for macOS arm64. Install @brrock/oj instead of this package.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brrock/oj-builds.git"
+  },
+  "files": ["bin/oj"],
+  "os": ["darwin"],
+  "cpu": ["arm64"]
+}

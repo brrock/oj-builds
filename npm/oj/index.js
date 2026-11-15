@@ -6,6 +6,7 @@ const path = require("path");
 const PLATFORMS = {
   "linux-x64": "@brrock/oj-linux-x64-gnu",
   "linux-arm64": "@brrock/oj-linux-arm64-gnu",
+  "darwin-arm64": "@brrock/oj-darwin-arm64",
 };
 
 /** Absolute path to the oj binary for this machine. Throws if unsupported. */

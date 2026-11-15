@@ -60,21 +60,41 @@ jobs:
         include:
           - pkg: linux-x64-gnu
             runner: ubuntu-latest
+            image: amazonlinux:2023
           - pkg: linux-arm64-gnu
             runner: ubuntu-24.04-arm
+            image: amazonlinux:2023
+          - pkg: darwin-arm64
+            runner: macos-15
     runs-on: ${{ matrix.runner }}
-    # Vercel's build image is Amazon Linux 2023 (glibc 2.34). Building in the
-    # same image guarantees the binary's glibc requirement is satisfied there.
-    container: amazonlinux:2023
+    # Linux builds run in Vercel's build image, Amazon Linux 2023 (glibc 2.34),
+    # so the binary's glibc requirement is met there. An empty image (macOS)
+    # runs on the runner itself. --privileged so the swap step can call swapon.
+    container:
+      image: ${{ matrix.image }}
+      options: --privileged
     timeout-minutes: 300
     steps:
       - name: install build deps
+        if: runner.os == 'Linux'
         run: |
           dnf install -y --allowerasing \
             git tar gzip xz findutils which curl \
             gcc gcc-c++ make cmake clang clang-devel llvm \
             perl python3 autoconf automake libtool \
-            zlib-devel pkgconf-pkg-config binutils
+            zlib-devel pkgconf-pkg-config binutils util-linux procps-ng
+
+      # The fat-LTO link outgrows a 16GB runner and the kernel kills rustc
+      # (upstream oj's release.yml does the same). The arm runner has no swap.
+      - name: add swap
+        if: runner.os == 'Linux'
+        run: |
+          df -h /__w
+          fallocate -l 16G /__w/swap-oj
+          chmod 600 /__w/swap-oj
+          mkswap /__w/swap-oj
+          swapon /__w/swap-oj
+          free -h
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -99,15 +119,23 @@ jobs:
 
       - name: cargo build
         working-directory: oj
+        # lcms2-sys links a system (Homebrew) lcms2 whenever pkg-config finds one.
+        env:
+          LCMS2_STATIC: "1"
         run: cargo build --release --locked -p oj
 
       - name: strip + smoke test
         working-directory: oj
         run: |
-          strip --strip-debug target/release/oj
+          if [ "$RUNNER_OS" = Linux ]; then
+            strip --strip-debug target/release/oj
+            ldd target/release/oj || true
+            objdump -T target/release/oj | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+          else
+            strip -S target/release/oj
+            otool -L target/release/oj
+          fi
           ls -lh target/release/oj
-          ldd target/release/oj || true
-          objdump -T target/release/oj | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
           ./target/release/oj --version
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -141,7 +169,7 @@ jobs:
 
       - name: stage binaries + set versions
         run: |
-          for pkg in linux-x64-gnu linux-arm64-gnu; do
+          for pkg in linux-x64-gnu linux-arm64-gnu darwin-arm64; do
             mkdir -p "npm/$pkg/bin"
             cp "artifacts/oj-$pkg/oj" "npm/$pkg/bin/oj"
             chmod 755 "npm/$pkg/bin/oj"
@@ -153,7 +181,7 @@ jobs:
       # versions that don't exist yet.
       - name: publish
         run: |
-          for dir in npm/linux-x64-gnu npm/linux-arm64-gnu npm/oj; do
+          for dir in npm/linux-x64-gnu npm/linux-arm64-gnu npm/darwin-arm64 npm/oj; do
             name=$(node -p "require('./$dir/package.json').name")
             ver=$(node -p "require('./$dir/package.json').version")
             if npm view "$name@$ver" version >/dev/null 2>&1; then

@@ -1,6 +1,6 @@
 # @brrock/oj
 
-Prebuilt Linux binaries of [oj](https://github.com/lovablelabs/oj) (lovablelabs' Rust frontend tooling), packaged for npm so it can run where you can't `cargo install`, like Vercel builds.
+Prebuilt Linux and macOS (arm64) binaries of [oj](https://github.com/lovablelabs/oj) (lovablelabs' Rust frontend tooling), packaged for npm so it can run where you can't `cargo install`, like Vercel builds.
 
 Upstream oj only ships to crates.io. This repo builds it from source for each oj release and publishes:
 
@@ -9,8 +9,9 @@ Upstream oj only ships to crates.io. This repo builds it from source for each oj
 | `@brrock/oj` | the `oj` command (a small Node launcher) |
 | `@brrock/oj-linux-x64-gnu` | oj for Linux x64, glibc ≥ 2.34 |
 | `@brrock/oj-linux-arm64-gnu` | oj for Linux arm64, glibc ≥ 2.34 |
+| `@brrock/oj-darwin-arm64` | oj for macOS arm64 (Apple silicon) |
 
-npm installs only the platform package that matches the machine. Binaries are built inside `amazonlinux:2023`, which is Vercel's build image.
+npm installs only the platform package that matches the machine. Linux binaries are built inside `amazonlinux:2023`, which is Vercel's build image; the macOS one on GitHub's `macos-15` runner.
 
 ## Use on Vercel
 
@@ -28,7 +29,7 @@ npm i -D @brrock/oj
 
 Set the Vercel project's output directory to `dist`. Versions match upstream oj versions.
 
-Only Linux is supported. On macOS/Windows install oj with `cargo install oj --locked`; you can point the launcher at any binary with `OJ_BINARY_PATH=/path/to/oj`.
+Supported: Linux x64/arm64 and macOS arm64. Elsewhere (Intel Mac, Windows) install oj with `cargo install oj --locked`; you can point the launcher at any binary with `OJ_BINARY_PATH=/path/to/oj`.
 
 `@brrock/oj` depends on `rolldown@1.2.1` and sets `OJ_VENDORED_ROLLDOWN` to it, the same rolldown the upstream nix build vendors for oj's TanStack Start bundles. Set `OJ_VENDORED_ROLLDOWN=` (empty) to use the app's own rolldown instead.
 
@@ -36,7 +37,7 @@ Only Linux is supported. On macOS/Windows install oj with `cargo install oj --lo
 
 `.github/workflows/release.yml` runs every 6 hours. When the latest `lovablelabs/oj` release isn't on npm yet, it:
 
-1. builds `oj` for x64 and arm64 in `amazonlinux:2023` (fat-LTO release build, so expect 1–2 hours),
+1. builds `oj` for Linux x64 and arm64 in `amazonlinux:2023` and for macOS arm64 natively (fat-LTO release build, so expect 1–2 hours),
 2. publishes the platform packages, then `@brrock/oj`, through npm trusted publishing (OIDC). Provenance is attached automatically and no npm token is stored.
 
 To build a specific version by hand: `make release VERSION=0.2.16`.
